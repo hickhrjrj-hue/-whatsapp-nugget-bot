@@ -1,20 +1,32 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
-const express = require('express'); // Added web server interface
+const express = require('express');
+const https = require('https'); // Added native HTTPS tool
 
-// --- RENDER PORT BINDING FIX ---
 const app = express();
-const PORT = process.env.PORT || 10000; // Render uses port 10000 by default
+const PORT = process.env.PORT || 10000;
+
+// Change this string to your exact public onrender link:
+const RENDER_APP_URL = 'https://onrender.com'; 
 
 app.get('/', (req, res) => {
     res.send('Nugget King Bot is running online 24/7!');
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Web server listening on port ${PORT} to keep Render happy.`);
+    console.log(`Web server listening on port ${PORT}.`);
+    
+    // --- ANTI-SLEEP SELF PING ---
+    setInterval(() => {
+        https.get(RENDER_APP_URL, (res) => {
+            console.log(`Self-ping sent status: ${res.statusCode} (Keeping bot awake)`);
+        }).on('error', (err) => {
+            console.error('Ping error:', err.message);
+        });
+    }, 600000); // Sends an internal link request every 10 minutes (600000ms)
+    // ----------------------------
 });
-// --------------------------------
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
