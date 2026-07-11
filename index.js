@@ -1,6 +1,20 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
-const pino = require('pino'); // Added for log control
+const pino = require('pino');
+const express = require('express'); // Added web server interface
+
+// --- RENDER PORT BINDING FIX ---
+const app = express();
+const PORT = process.env.PORT || 10000; // Render uses port 10000 by default
+
+app.get('/', (req, res) => {
+    res.send('Nugget King Bot is running online 24/7!');
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Web server listening on port ${PORT} to keep Render happy.`);
+});
+// --------------------------------
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -12,7 +26,6 @@ async function startBot() {
         printQRInTerminal: false,
         syncFullHistory: false,
         markOnlineOnConnect: true,
-        // FIX: Changes logging level to 'silent' for fatal decryption spam
         logger: pino({ level: 'silent' }) 
     });
 
