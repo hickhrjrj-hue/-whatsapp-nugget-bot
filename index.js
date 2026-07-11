@@ -1,13 +1,18 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 
 async function startBot() {
     // Saves your login details locally on Render's server so you stay logged in
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
+    // FIX: Dynamically fetch the latest official WhatsApp version signature
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`Using WhatsApp Web Version: ${version.join('.')}, isLatest: ${isLatest}`);
+
     const sock = makeWASocket({
+        version: version, // Passes the latest version to stop the 405 error
         auth: state,
-        printQRInTerminal: false // We will handle printing manually below for cleaner logs
+        printQRInTerminal: false
     });
 
     // Save changes to login session details
@@ -38,21 +43,18 @@ async function startBot() {
 
     // Listen for incoming messages
     sock.ev.on('messages.upsert', async (m) => {
-        const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return; // Ignore empty messages or messages you sent yourself
+        const msg = m.messages[0]; // Fix target indexing structure
+        if (!msg.message || msg.key.fromMe) return; 
 
         const remoteJid = msg.key.remoteJid;
-        // Extract incoming text from conversation or extended content fields
         const messageText = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').toLowerCase().trim();
 
         if (messageText === 'hi') {
-            // Check if you are texting yourself in your personal notepad chat
             const isMe = remoteJid.includes(sock.user.id.split(':')[0]);
 
             if (isMe) {
                 await sock.sendMessage(remoteJid, { text: 'hi master' }, { quoted: msg });
             } else {
-                // If anyone else sends "hi"
                 await sock.sendMessage(remoteJid, { text: 'hi the nugget king is here' }, { quoted: msg });
             }
         }
@@ -60,4 +62,5 @@ async function startBot() {
 }
 
 startBot();
+
 
