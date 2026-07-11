@@ -4,8 +4,7 @@ const qrcode = require('qrcode-terminal');
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        headless: true,
-        executablePath: '/usr/bin/google-chrome', // Added: Points Puppeteer to Render's hidden Chrome path
+        headless: true, // Removed the broken executablePath line completely
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -41,3 +40,4 @@ client.on('message', async (msg) => {
 });
 
 client.initialize();
+
