@@ -1,43 +1,39 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const wppconnect = require('@wppconnect-team/wppconnect');
 
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true, // Removed the broken executablePath line completely
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
-        ],
+wppconnect
+  .create({
+    session: 'nugget-king-session',
+    catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
+      console.log('\n--- SCAN THIS CODE ON YOUR PHONE ---');
+      console.log(asciiQR); // Prints the visual text QR code in Render logs
+      console.log('------------------------------------\n');
+    },
+    puppeteerOptions: {
+      userDataDir: './tokens', // Saves your login details locally on the server
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
-});
+  })
+  .then((client) => startBot(client))
+  .catch((error) => console.log('Initialization Error:', error));
 
-client.on('qr', (qr) => {
-    qrcode.generate(qr, { small: true });
-    console.log('QR CODE CREATED:');
-    console.log(qr); // This prints the raw string so you can see it in cloud logs
-});
+function startBot(client) {
+  console.log('WhatsApp Bot is ready and running!');
 
-client.on('ready', () => {
-    console.log('WhatsApp Bot is ready and running!');
-});
+  // Listen for incoming messages
+  client.onMessage(async (message) => {
+    // If the message isn't text, ignore it
+    if (!message.body) return;
 
-client.on('message', async (msg) => {
-    const messageText = msg.body.toLowerCase().trim();
+    const messageText = message.body.toLowerCase().trim();
+
     if (messageText === 'hi') {
-        if (msg.fromMe || msg.to === msg.from) {
-            await msg.reply('hi master');
-        } else {
-            await msg.reply('hi the nugget king is here');
-        }
+      // Check if you sent it to yourself or if it's from your own profile
+      if (message.fromMe || message.to === message.from) {
+        await client.reply(message.from, 'hi master', message.id);
+      } else {
+        // If anyone else sends "hi"
+        await client.reply(message.from, 'hi the nugget king is here', message.id);
+      }
     }
-});
-
-client.initialize();
-
+  });
+}
