@@ -5,6 +5,7 @@ const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
+        executablePath: '/usr/bin/google-chrome', // Added: Points Puppeteer to Render's hidden Chrome path
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
