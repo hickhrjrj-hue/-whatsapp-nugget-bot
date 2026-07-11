@@ -2,23 +2,20 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const qrcode = require('qrcode-terminal');
 
 async function startBot() {
-    // Saves your login details locally on Render's server so you stay logged in
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-
-    // FIX: Dynamically fetch the latest official WhatsApp version signature
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`Using WhatsApp Web Version: ${version.join('.')}, isLatest: ${isLatest}`);
+    const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
-        version: version, // Passes the latest version to stop the 405 error
+        version: version,
         auth: state,
-        printQRInTerminal: false
+        printQRInTerminal: false,
+        // FIX: Stops Render from crashing by blocking heavy historical chat syncing
+        syncFullHistory: false,
+        markOnlineOnConnect: true
     });
 
-    // Save changes to login session details
     sock.ev.on('creds.update', saveCreds);
 
-    // Handle connection states (QR generation / Booting up)
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -34,7 +31,7 @@ async function startBot() {
 
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting: ', shouldReconnect);
+            console.log('Connection closed, reconnecting: ', shouldReconnect);
             if (shouldReconnect) {
                 startBot();
             }
@@ -43,24 +40,28 @@ async function startBot() {
 
     // Listen for incoming messages
     sock.ev.on('messages.upsert', async (m) => {
-        const msg = m.messages[0]; // Fix target indexing structure
-        if (!msg.message || msg.key.fromMe) return; 
+        // Only trigger on new incoming chats
+        if (m.type !== 'notify') return;
 
-        const remoteJid = msg.key.remoteJid;
-        const messageText = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').toLowerCase().trim();
+        for (const msg of m.messages) {
+            // Ignore messages sent by the bot itself or without structure
+            if (!msg.message || msg.key.fromMe) continue;
 
-        if (messageText === 'hi') {
-            const isMe = remoteJid.includes(sock.user.id.split(':')[0]);
+            const remoteJid = msg.key.remoteJid;
+            const messageText = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').toLowerCase().trim();
 
-            if (isMe) {
-                await sock.sendMessage(remoteJid, { text: 'hi master' }, { quoted: msg });
-            } else {
-                await sock.sendMessage(remoteJid, { text: 'hi the nugget king is here' }, { quoted: msg });
+            if (messageText === 'hi') {
+                // Check if you are messaging your own profile
+                const isMe = remoteJid.includes(sock.user.id.split(':')[0]);
+
+                if (isMe) {
+                    await sock.sendMessage(remoteJid, { text: 'hi master' }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(remoteJid, { text: 'hi the nugget king is here' }, { quoted: msg });
+                }
             }
         }
     });
 }
 
 startBot();
-
-
