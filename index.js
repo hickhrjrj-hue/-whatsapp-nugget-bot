@@ -49,7 +49,7 @@ async function usePostgresAuthState(pgClient) {
             const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
             if (res.rows.length === 0) return null;
             
-            // CRITICAL FIX: Targeted explicit array element row row data mapping
+            // FIXED: Target row index properly to prevent crashes
             const rowData = res.rows[0].data;
             return JSON.parse(rowData, (key, value) => {
                 if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
@@ -115,13 +115,14 @@ let pgClientInstance = null;
 async function startBot() {
     console.log("Attempting isolated database handshake...");
 
+    // Remove the broken env variable from runtime memory completely
     delete process.env.DATABASE_URL;
 
     if (!pgClientInstance) {
-        // CRITICAL FIX: Routing through Supabase IPv4 Pooler Host to eliminate ENETUNREACH drops
+        // Enforcing direct credentials via the IPv4 pooling route
         pgClientInstance = new PGClient({
             user: 'postgres.uknxovlystzlbydesaem',
-            host: '://supabase.com',
+            host: 'aws-0-us-east-1.pooler.supabase.com',
             database: 'postgres',
             password: 'Nuggetdagod2023',
             port: 5432,
