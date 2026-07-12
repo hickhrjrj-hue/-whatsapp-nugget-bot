@@ -49,7 +49,7 @@ async function usePostgresAuthState(pgClient) {
         const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
         if (res.rows.length === 0) return null;
         
-        // FIX: Corrected target index reference from res.rows.data to res.rows[0].data
+        // FIX: Corrected target index from res.rows.data to res.rows[0].data
         return JSON.parse(res.rows[0].data, (key, value) => {
             if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
                 try { return Buffer.from(value, 'base64'); } catch { return value; }
