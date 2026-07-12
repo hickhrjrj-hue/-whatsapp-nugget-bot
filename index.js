@@ -7,7 +7,7 @@ const { Client: PGClient } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
-const RENDER_APP_URL = 'https://onrender.com'; 
+const RENDER_APP_URL = 'https://whatsapp-nugget-bot.onrender.com'; 
 
 app.get('/', (req, res) => {
     res.send('Nugget King Bot is running online 24/7!');
@@ -106,10 +106,9 @@ async function usePostgresAuthState(pgClient) {
 }
 
 async function startBot() {
-    // Reads directly from the Render Environment variables panel securely
     const pgClient = new PGClient({
         user: process.env.SUPABASE_USER || 'postgres.uknxovlystzlbydesaem',
-        host: 'aws-0-ap-southeast-2.pooler.supabase.com',
+        host: '://supabase.com',
         database: 'postgres',
         password: process.env.SUPABASE_PASSWORD || 'Nuggetdagod2023',
         port: 5432,
@@ -132,22 +131,8 @@ async function startBot() {
 
     const MY_PHONE_NUMBER = '6587506845'; 
 
-    if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
-            try {
-                const code = await sock.requestPairingCode(MY_PHONE_NUMBER);
-                console.log('\n=======================================');
-                console.log(`YOUR WHATSAPP PAIRING CODE: ${code}`);
-                console.log('=======================================\n');
-            } catch (err) {
-                console.error('Failed to generate pairing code:', err.message);
-            }
-        }, 5000);
-    }
-
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', (update) => {
+    // FIX: Increased timeout window slightly to allow database handshakes to finish mapping keys first
+    sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
         if (connection === 'open') {
@@ -162,6 +147,22 @@ async function startBot() {
             }
         }
     });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    // Explicit listener sequence safely triggers registration code generation
+    setTimeout(async () => {
+        if (!sock.authState.creds.registered) {
+            try {
+                const code = await sock.requestPairingCode(MY_PHONE_NUMBER);
+                console.log('\n=======================================');
+                console.log(`YOUR WHATSAPP PAIRING CODE: ${code}`);
+                console.log('=======================================\n');
+            } catch (err) {
+                console.error('Failed to generate pairing code:', err.message);
+            }
+        }
+    }, 15000); // 15-second initialization buffer window applied
 
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
