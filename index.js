@@ -1,14 +1,10 @@
 const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Curve, generateRegistrationId } = require('@whiskeysockets/baileys');
-const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 const express = require('express');
 const https = require('https');
 const { Client: PGClient } = require('pg'); 
 
-const app = reportExpressInstance();
-function reportExpressInstance() {
-    return express();
-}
+const app = express();
 const PORT = process.env.PORT || 10000;
 const RENDER_APP_URL = 'https://onrender.com'; 
 
@@ -19,7 +15,6 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Web server listening on port ${PORT}.`);
     
-    // Anti-sleep self-ping mechanism
     setInterval(() => {
         https.get(RENDER_APP_URL, (res) => {
             console.log(`Self-ping sent status: ${res.statusCode} (Keeping bot awake)`);
@@ -29,7 +24,6 @@ app.listen(PORT, '0.0.0.0', () => {
     }, 600000); 
 });
 
-// Custom state sync logic to save login credentials to Supabase instead of the volatile local drive
 async function usePostgresAuthState(pgClient) {
     await pgClient.query(`
         CREATE TABLE IF NOT EXISTS whatsapp_session (
@@ -108,10 +102,9 @@ async function usePostgresAuthState(pgClient) {
 }
 
 async function startBot() {
-    // FIXED: Using split config parameters explicitly. There is no DATABASE_URL or string parser to fail lookup.
     const pgClient = new PGClient({
         user: 'postgres.uknxovlystzlbydesaem',
-        host: 'aws-0-ap-southeast-2.pooler.supabase.com',
+        host: '://supabase.com',
         database: 'postgres',
         password: 'Nuggetdagod2023',
         port: 5432,
@@ -126,22 +119,35 @@ async function startBot() {
     const sock = makeWASocket({
         version: version,
         auth: state,
-        printQRInTerminal: false,
+        printQRInTerminal: false, // Turn off QR completely
         syncFullHistory: false,
         markOnlineOnConnect: true,
         logger: pino({ level: 'silent' })
     });
 
+    // --- FIX: GENERATE PAIRING CODE INSTEAD OF QR ---
+    // Change the string below to your phone number (Numbers only, e.g. '6587506845')
+    const MY_PHONE_NUMBER = '6587506845'; 
+
+    if (!sock.authState.creds.registered) {
+        // Wait briefly for the connection to setup, then request code
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(MY_PHONE_NUMBER);
+                console.log('\n=======================================');
+                console.log(`YOUR WHATSAPP PAIRING CODE: ${code}`);
+                console.log('=======================================\n');
+            } catch (err) {
+                console.error('Failed to generate pairing code:', err.message);
+            }
+        }, 5000);
+    }
+    // ------------------------------------------------
+
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        if (qr) {
-            console.log('\n--- SCAN THIS NEW CODE ON YOUR PHONE ---');
-            qrcode.generate(qr, { small: true });
-            console.log('----------------------------------------\n');
-        }
+        const { connection, lastDisconnect } = update;
 
         if (connection === 'open') {
             console.log('WhatsApp Bot is ready and running!');
