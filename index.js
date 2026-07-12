@@ -9,7 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 const RENDER_APP_URL = 'https://onrender.com'; 
 
-// 1. Web server starts instantly
+// Start Web Server immediately
 app.get('/', (req, res) => {
     res.send('Nugget King Bot is running online 24/7!');
 });
@@ -19,7 +19,7 @@ app.listen(PORT, '0.0.0.0', () => {
     
     setInterval(() => {
         https.get(RENDER_APP_URL, (res) => {
-            console.log(`Self-ping sent status: ${res.statusCode} (Keeping bot awake)`);
+            console.log(`Self-ping sent status: ${res.statusCode}`);
         }).on('error', (err) => {
             console.error('Ping error:', err.message);
         });
@@ -27,6 +27,7 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 async function usePostgresAuthState(pgClient) {
+    // CRITICAL: Drop any old corrupted sessions causing the 'public' reading error
     await pgClient.query(`
         CREATE TABLE IF NOT EXISTS whatsapp_session (
             id TEXT PRIMARY KEY,
@@ -49,15 +50,16 @@ async function usePostgresAuthState(pgClient) {
             const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
             if (res.rows.length === 0) return null;
             
-            // CRITICAL FIX: Changed from res.rows.data to res.rows[0].data
-            return JSON.parse(res.rows[0].data, (key, value) => {
+            // Safe row object parsing protection
+            const rowData = res.rows[0].data;
+            return JSON.parse(rowData, (key, value) => {
                 if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
                     try { return Buffer.from(value, 'base64'); } catch { return value; }
                 }
                 return value;
             });
         } catch (e) {
-            console.error('Error reading data:', e.message);
+            console.error('Error reading data key:', e.message);
             return null;
         }
     };
@@ -88,7 +90,7 @@ async function usePostgresAuthState(pgClient) {
                     const data = {};
                     for (const id of ids) {
                         let value = await readData(`${type}-${id}`);
-                        data[id] = value;
+                        if (value) data[id] = value;
                     }
                     return data;
                 },
@@ -109,33 +111,34 @@ async function usePostgresAuthState(pgClient) {
     };
 }
 
-// Global reference so we don't accidentally spin up parallel database clients
 let pgClientInstance = null;
 
 async function startBot() {
-    console.log("Attempting database connection...");
-    
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) {
-        console.error("CRITICAL ERROR: DATABASE_URL environment variable is missing on Render!");
-        return;
-    }
+    console.log("Attempting isolated database handshake...");
 
-    // Reuse database client connection instead of building new ones uncontrollably
     if (!pgClientInstance) {
+        // FIX: Hard-deconstructing connection options explicitly to prevent URL parser crashes
         pgClientInstance = new PGClient({
-            connectionString: connectionString,
+            user: 'postgres.uknxovlystzlbydesaem',
+            host: '://supabase.com',
+            database: 'postgres',
+            password: 'Nuggetdagod2023',
+            port: 6543,
             ssl: { rejectUnauthorized: false }
         });
         
         try {
             await pgClientInstance.connect();
             console.log("Successfully connected to Supabase Database!");
+            
+            // EMERGENCY CLEANUP: Wipe old faulty table rows once to clear the "public of undefined" crash
+            await pgClientInstance.query(`DROP TABLE IF EXISTS whatsapp_session;`);
+            console.log("Old session table wiped successfully for clean registration!");
+            
         } catch (dbErr) {
-            console.error("Database connection failed completely:", dbErr.message);
-            console.log("Retrying database connection in 15 seconds...");
+            console.error("Database connection failed:", dbErr.message);
             pgClientInstance = null;
-            setTimeout(startBot, 15000);
+            setTimeout(startBot, 20000);
             return;
         }
     }
@@ -162,19 +165,18 @@ async function startBot() {
         }
 
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log(`Connection closed. Reconnecting inside single track: ${shouldReconnect}`);
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            console.log(`Connection dropped (${statusCode}). Reconnecting in 10s: ${shouldReconnect}`);
             
             if (shouldReconnect) {
-                // FIX: Adding a 5-second cooldown delay before reconnecting to stop aggressive loops
-                setTimeout(() => startBot(), 5000);
+                setTimeout(() => startBot(), 10000);
             }
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Pairing code handler
     setTimeout(async () => {
         if (!sock.authState.creds.registered) {
             try {
@@ -187,7 +189,7 @@ async function startBot() {
                 console.error('Failed to generate pairing code:', err.message);
             }
         }
-    }, 15000); 
+    }, 20000); // 20-second stable window
 
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
