@@ -49,7 +49,7 @@ async function usePostgresAuthState(pgClient) {
             const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
             if (res.rows.length === 0) return null;
             
-            // CRITICAL FIX: Safe element extraction from row array to prevent undefined error crashing
+            // FIXED: Changed res.rows.data to res.rows[0].data to get row item safely
             const rowData = res.rows[0].data;
             return JSON.parse(rowData, (key, value) => {
                 if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
@@ -115,23 +115,23 @@ let pgClientInstance = null;
 async function startBot() {
     console.log("Attempting isolated database handshake...");
 
-    // Erase environment memory to ignore old bad strings completely
+    // Erase environment variables to block old cached strings completely
     delete process.env.DATABASE_URL;
 
     if (!pgClientInstance) {
-        // FIXED: Using direct host addressing configurations to avoid connection pool user conflicts
+        // FIXED: Using IPv4 Pooler configuration host with strict username mapping format
         pgClientInstance = new PGClient({
-            user: 'postgres',
-            host: 'db.uknxovlystzlbydesaem.supabase.co',
+            user: 'postgres.uknxovlystzlbydesaem',
+            host: '://supabase.com',
             database: 'postgres',
             password: 'Nuggetdagod2023',
-            port: 5432,
+            port: 6543,
             ssl: { rejectUnauthorized: false }
         });
         
         try {
             await pgClientInstance.connect();
-            console.log("Successfully connected to Supabase Database!");
+            console.log("Successfully connected to Supabase Database via IPv4 Pooler!");
         } catch (dbErr) {
             console.error("Database connection failed:", dbErr.message);
             pgClientInstance = null;
