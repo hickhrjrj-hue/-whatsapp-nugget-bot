@@ -7,9 +7,6 @@ const { Client: PGClient } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
-
-// Direct Supabase database routing configuration
-const DATABASE_URL = 'postgresql://postgres.uknxovlystzlbydesaem:Nuggetdagod2023@://supabase.com'; 
 const RENDER_APP_URL = 'https://onrender.com'; 
 
 app.get('/', (req, res) => {
@@ -52,7 +49,7 @@ async function usePostgresAuthState(pgClient) {
         const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
         if (res.rows.length === 0) return null;
         
-        // FIX: Correctly maps rows[0] array indexing natively to prevent the URL parsing crash
+        // Target index mapped to rows[0] object array natively
         return JSON.parse(res.rows[0].data, (key, value) => {
             if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
                 try { return Buffer.from(value, 'base64'); } catch { return value; }
@@ -94,7 +91,16 @@ async function usePostgresAuthState(pgClient) {
 }
 
 async function startBot() {
-    const pgClient = new PGClient({ connectionString: DATABASE_URL });
+    // FIX: Passing database keys as separate layout fields to completely bypass Render's automatic text URL overrides
+    const pgClient = new PGClient({
+        user: 'postgres.uknxovlystzlbydesaem',
+        host: '://supabase.com',
+        database: 'postgres',
+        password: 'Nuggetdagod2023',
+        port: 5432,
+        ssl: { rejectUnauthorized: false }
+    });
+    
     await pgClient.connect();
 
     const { state, saveCreds } = await usePostgresAuthState(pgClient);
