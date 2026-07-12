@@ -9,7 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 const RENDER_APP_URL = 'https://onrender.com'; 
 
-// Start Web Server immediately
+// 1. Web server starts instantly
 app.get('/', (req, res) => {
     res.send('Nugget King Bot is running online 24/7!');
 });
@@ -49,7 +49,7 @@ async function usePostgresAuthState(pgClient) {
             const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
             if (res.rows.length === 0) return null;
             
-            // FIX: Changed res.rows.data to res.rows[0].data to point to the correct row object
+            // CRITICAL FIX: Changed from res.rows.data to res.rows[0].data
             return JSON.parse(res.rows[0].data, (key, value) => {
                 if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
                     try { return Buffer.from(value, 'base64'); } catch { return value; }
@@ -109,6 +109,9 @@ async function usePostgresAuthState(pgClient) {
     };
 }
 
+// Global reference so we don't accidentally spin up parallel database clients
+let pgClientInstance = null;
+
 async function startBot() {
     console.log("Attempting database connection...");
     
@@ -118,22 +121,26 @@ async function startBot() {
         return;
     }
 
-    const pgClient = new PGClient({
-        connectionString: connectionString,
-        ssl: { rejectUnauthorized: false }
-    });
-    
-    try {
-        await pgClient.connect();
-        console.log("Successfully connected to Supabase Database!");
-    } catch (dbErr) {
-        console.error("Database connection failed completely:", dbErr.message);
-        console.log("Retrying database connection in 10 seconds...");
-        setTimeout(startBot, 10000);
-        return;
+    // Reuse database client connection instead of building new ones uncontrollably
+    if (!pgClientInstance) {
+        pgClientInstance = new PGClient({
+            connectionString: connectionString,
+            ssl: { rejectUnauthorized: false }
+        });
+        
+        try {
+            await pgClientInstance.connect();
+            console.log("Successfully connected to Supabase Database!");
+        } catch (dbErr) {
+            console.error("Database connection failed completely:", dbErr.message);
+            console.log("Retrying database connection in 15 seconds...");
+            pgClientInstance = null;
+            setTimeout(startBot, 15000);
+            return;
+        }
     }
 
-    const { state, saveCreds } = await usePostgresAuthState(pgClient);
+    const { state, saveCreds } = await usePostgresAuthState(pgClientInstance);
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
@@ -156,15 +163,18 @@ async function startBot() {
 
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed, reconnecting: ', shouldReconnect);
+            console.log(`Connection closed. Reconnecting inside single track: ${shouldReconnect}`);
+            
             if (shouldReconnect) {
-                startBot();
+                // FIX: Adding a 5-second cooldown delay before reconnecting to stop aggressive loops
+                setTimeout(() => startBot(), 5000);
             }
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
+    // Pairing code handler
     setTimeout(async () => {
         if (!sock.authState.creds.registered) {
             try {
@@ -192,7 +202,7 @@ async function startBot() {
             if (messageText === 'hi') {
                 if (!sock.user || !sock.user.id) continue;
                 
-                const cleanUserId = sock.user.id.split(':');
+                const cleanUserId = sock.user.id.split(':')[0];
                 const isMe = remoteJid.includes(cleanUserId);
 
                 if (isMe) {
