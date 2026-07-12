@@ -5,7 +5,10 @@ const express = require('express');
 const https = require('https');
 const { Client: PGClient } = require('pg'); 
 
-const app = express();
+const app = reportExpressInstance();
+function reportExpressInstance() {
+    return express();
+}
 const PORT = process.env.PORT || 10000;
 const RENDER_APP_URL = 'https://onrender.com'; 
 
@@ -16,6 +19,7 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Web server listening on port ${PORT}.`);
     
+    // Anti-sleep self-ping mechanism
     setInterval(() => {
         https.get(RENDER_APP_URL, (res) => {
             console.log(`Self-ping sent status: ${res.statusCode} (Keeping bot awake)`);
@@ -56,7 +60,6 @@ async function usePostgresAuthState(pgClient) {
         });
     };
 
-    // FIX: Using Curve and native generators to completely fix the newKeyPair crash
     let creds = await readData('creds');
     if (!creds) {
         creds = {
@@ -105,9 +108,10 @@ async function usePostgresAuthState(pgClient) {
 }
 
 async function startBot() {
+    // FIXED: Using split config parameters explicitly. There is no DATABASE_URL or string parser to fail lookup.
     const pgClient = new PGClient({
         user: 'postgres.uknxovlystzlbydesaem',
-        host: '://supabase.com',
+        host: 'aws-0-ap-southeast-2.pooler.supabase.com',
         database: 'postgres',
         password: 'Nuggetdagod2023',
         port: 5432,
