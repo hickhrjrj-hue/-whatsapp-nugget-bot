@@ -9,9 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 const RENDER_APP_URL = 'https://onrender.com'; 
 
-// ==========================================
-// CRITICAL FIX: START WEB SERVER IMMEDIATELY
-// ==========================================
+// Start Web Server immediately
 app.get('/', (req, res) => {
     res.send('Nugget King Bot is running online 24/7!');
 });
@@ -19,7 +17,6 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Web server listening on port ${PORT}.`);
     
-    // Keep-alive ping loop
     setInterval(() => {
         https.get(RENDER_APP_URL, (res) => {
             console.log(`Self-ping sent status: ${res.statusCode} (Keeping bot awake)`);
@@ -29,7 +26,6 @@ app.listen(PORT, '0.0.0.0', () => {
     }, 600000); 
 });
 
-// Database state serialization logic
 async function usePostgresAuthState(pgClient) {
     await pgClient.query(`
         CREATE TABLE IF NOT EXISTS whatsapp_session (
@@ -52,6 +48,8 @@ async function usePostgresAuthState(pgClient) {
         try {
             const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
             if (res.rows.length === 0) return null;
+            
+            // FIX: Changed res.rows.data to res.rows[0].data to point to the correct row object
             return JSON.parse(res.rows[0].data, (key, value) => {
                 if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
                     try { return Buffer.from(value, 'base64'); } catch { return value; }
@@ -59,6 +57,7 @@ async function usePostgresAuthState(pgClient) {
                 return value;
             });
         } catch (e) {
+            console.error('Error reading data:', e.message);
             return null;
         }
     };
@@ -113,7 +112,6 @@ async function usePostgresAuthState(pgClient) {
 async function startBot() {
     console.log("Attempting database connection...");
     
-    // Fallback URL checking for environment setup confirmation
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
         console.error("CRITICAL ERROR: DATABASE_URL environment variable is missing on Render!");
@@ -194,7 +192,7 @@ async function startBot() {
             if (messageText === 'hi') {
                 if (!sock.user || !sock.user.id) continue;
                 
-                const cleanUserId = sock.user.id.split(':')[0];
+                const cleanUserId = sock.user.id.split(':');
                 const isMe = remoteJid.includes(cleanUserId);
 
                 if (isMe) {
@@ -207,5 +205,4 @@ async function startBot() {
     });
 }
 
-// Start bot process loop
 startBot();
