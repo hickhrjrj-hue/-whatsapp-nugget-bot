@@ -1,121 +1,17 @@
-const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Curve, generateRegistrationId } = require('@whiskeysockets/baileys');
-const qrcode = require('qrcode-terminal');
-const pino = require('pino');
-const express = require('express');
-const https = require('https');
-const { Client: PGClient } = require('pg'); 
-
-const app = express();
-const PORT = process.env.PORT || 10000;
-const RENDER_APP_URL = 'https://whatsapp-nugget-bot.onrender.com'; 
-
-app.get('/', (req, res) => {
-    res.send('Nugget King Bot is running online 24/7!');
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Web server listening on port ${PORT}.`);
-    
-    setInterval(() => {
-        https.get(RENDER_APP_URL, (res) => {
-            console.log(`Self-ping sent status: ${res.statusCode} (Keeping bot awake)`);
-        }).on('error', (err) => {
-            console.error('Ping error:', err.message);
-        });
-    }, 600000); 
-});
-
-async function usePostgresAuthState(pgClient) {
-    await pgClient.query(`
-        CREATE TABLE IF NOT EXISTS whatsapp_session (
-            id TEXT PRIMARY KEY,
-            data TEXT NOT NULL
-        )
-    `);
-
-    const writeData = async (data, id) => {
-        const jsonStr = JSON.stringify(data, (key, value) => 
-            Buffer.isBuffer(value) ? value.toString('base64') : value
-        );
-        await pgClient.query(
-            'INSERT INTO whatsapp_session (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2',
-            [id, jsonStr]
-        );
-    };
-
-    const readData = async (id) => {
-        try {
-            const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
-            if (res.rows.length === 0) return null;
-            return JSON.parse(res.rows[0].data, (key, value) => {
-                if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
-                    try { return Buffer.from(value, 'base64'); } catch { return value; }
-                }
-                return value;
-            });
-        } catch (e) {
-            return null;
-        }
-    };
-
-    let creds = await readData('creds');
-    if (!creds) {
-        creds = {
-            noiseKey: Curve.generateKeyPair(),
-            signedIdentityKey: Curve.generateKeyPair(),
-            signedPreKey: {
-                keyPair: Curve.generateKeyPair(),
-                signature: Buffer.alloc(64),
-                keyId: 1
-            },
-            registrationId: generateRegistrationId(),
-            advSecretKey: Buffer.alloc(32).toString('base64'),
-            nextPreKeyId: 1,
-            firstUnuploadedPreKeyId: 1,
-            accountSettings: { unarchiveChats: false }
-        };
-    }
-
-    return {
-        state: {
-            creds,
-            keys: {
-                get: async (type, ids) => {
-                    const data = {};
-                    for (const id of ids) {
-                        let value = await readData(`${type}-${id}`);
-                        data[id] = value;
-                    }
-                    return data;
-                },
-                set: async (data) => {
-                    for (const category in data) {
-                        for (const id in data[category]) {
-                            const value = data[category][id];
-                            if (value) await writeData(value, `${category}-${id}`);
-                            else await pgClient.query('DELETE FROM whatsapp_session WHERE id = $1', [`${category}-${id}`]);
-                        }
-                    }
-                }
-            }
-        },
-        saveCreds: async () => {
-            await writeData(creds, 'creds');
-        }
-    };
-}
-
 async function startBot() {
+    // FIX: Using connectionString to read your Render environment variable dynamically
     const pgClient = new PGClient({
-        user: process.env.SUPABASE_USER || 'postgres.uknxovlystzlbydesaem',
-        host: '://supabase.com',
-        database: 'postgres',
-        password: process.env.SUPABASE_PASSWORD || 'Nuggetdagod2023',
-        port: 5432,
+        connectionString: process.env.DATABASE_URL,
         ssl: { rejectUnauthorized: false }
     });
     
-    await pgClient.connect();
+    try {
+        await pgClient.connect();
+        console.log("Successfully connected to Supabase Database!");
+    } catch (dbErr) {
+        console.error("Database connection failed:", dbErr.message);
+        process.exit(1); // Stop process cleanly if DB fails
+    }
 
     const { state, saveCreds } = await usePostgresAuthState(pgClient);
     const { version } = await fetchLatestBaileysVersion();
@@ -131,7 +27,6 @@ async function startBot() {
 
     const MY_PHONE_NUMBER = '6587506845'; 
 
-    // FIX: Increased timeout window slightly to allow database handshakes to finish mapping keys first
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
@@ -150,10 +45,11 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Explicit listener sequence safely triggers registration code generation
+    // FIX: Optimized conditions for generating Pairing Codes cleanly without infinite loops
     setTimeout(async () => {
         if (!sock.authState.creds.registered) {
             try {
+                console.log(`Requesting pairing code for phone number: ${MY_PHONE_NUMBER}`);
                 const code = await sock.requestPairingCode(MY_PHONE_NUMBER);
                 console.log('\n=======================================');
                 console.log(`YOUR WHATSAPP PAIRING CODE: ${code}`);
@@ -162,7 +58,7 @@ async function startBot() {
                 console.error('Failed to generate pairing code:', err.message);
             }
         }
-    }, 15000); // 15-second initialization buffer window applied
+    }, 15000); 
 
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
@@ -171,10 +67,14 @@ async function startBot() {
             if (!msg.message || msg.key.fromMe) continue;
 
             const remoteJid = msg.key.remoteJid;
-            const messageText = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').toLowerCase().trim();
+            // FIX: Graceful handling of message types to prevent application crashes
+            const incomingText = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+            const messageText = incomingText.toLowerCase().trim();
 
             if (messageText === 'hi') {
-                const isMe = remoteJid.includes(sock.user.id.split(':'));
+                // FIX: Cleaner identification of self commands
+                const cleanUserId = sock.user.id.split(':')[0];
+                const isMe = remoteJid.includes(cleanUserId);
 
                 if (isMe) {
                     await sock.sendMessage(remoteJid, { text: 'hi master' }, { quoted: msg });
@@ -185,5 +85,3 @@ async function startBot() {
         }
     });
 }
-
-startBot();
