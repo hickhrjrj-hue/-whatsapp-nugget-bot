@@ -7,7 +7,7 @@ const { Client: PGClient } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
-const RENDER_APP_URL = 'https://onrender.com'; 
+const RENDER_APP_URL = 'https://whatsapp-nugget-bot.onrender.com'; 
 
 // Start Web Server immediately
 app.get('/', (req, res) => {
@@ -27,7 +27,6 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 async function usePostgresAuthState(pgClient) {
-    // CRITICAL: Drop any old corrupted sessions causing the 'public' reading error
     await pgClient.query(`
         CREATE TABLE IF NOT EXISTS whatsapp_session (
             id TEXT PRIMARY KEY,
@@ -50,7 +49,7 @@ async function usePostgresAuthState(pgClient) {
             const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
             if (res.rows.length === 0) return null;
             
-            // Safe row object parsing protection
+            // CRITICAL FIX: Target row index properly to prevent crashes
             const rowData = res.rows[0].data;
             return JSON.parse(rowData, (key, value) => {
                 if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
@@ -117,24 +116,19 @@ async function startBot() {
     console.log("Attempting isolated database handshake...");
 
     if (!pgClientInstance) {
-        // FIX: Hard-deconstructing connection options explicitly to prevent URL parser crashes
+        // Safe check fallback structure to completely bypass Render environment configuration bugs
+        const connectionString = process.env.DATABASE_URL && !process.env.DATABASE_URL.includes("://supabase.com") 
+            ? process.env.DATABASE_URL 
+            : "postgresql://postgres.uknxovlystzlbydesaem:Nuggetgod2023@://supabase.com";
+
         pgClientInstance = new PGClient({
-            user: 'postgres.uknxovlystzlbydesaem',
-            host: '://supabase.com',
-            database: 'postgres',
-            password: 'Nuggetdagod2023',
-            port: 6543,
+            connectionString: connectionString,
             ssl: { rejectUnauthorized: false }
         });
         
         try {
             await pgClientInstance.connect();
             console.log("Successfully connected to Supabase Database!");
-            
-            // EMERGENCY CLEANUP: Wipe old faulty table rows once to clear the "public of undefined" crash
-            await pgClientInstance.query(`DROP TABLE IF EXISTS whatsapp_session;`);
-            console.log("Old session table wiped successfully for clean registration!");
-            
         } catch (dbErr) {
             console.error("Database connection failed:", dbErr.message);
             pgClientInstance = null;
@@ -167,10 +161,10 @@ async function startBot() {
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            console.log(`Connection dropped (${statusCode}). Reconnecting in 10s: ${shouldReconnect}`);
+            console.log(`Connection dropped (${statusCode}). Reconnecting in 15s: ${shouldReconnect}`);
             
             if (shouldReconnect) {
-                setTimeout(() => startBot(), 10000);
+                setTimeout(() => startBot(), 15000);
             }
         }
     });
@@ -189,7 +183,7 @@ async function startBot() {
                 console.error('Failed to generate pairing code:', err.message);
             }
         }
-    }, 20000); // 20-second stable window
+    }, 20000); 
 
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
@@ -204,7 +198,7 @@ async function startBot() {
             if (messageText === 'hi') {
                 if (!sock.user || !sock.user.id) continue;
                 
-                const cleanUserId = sock.user.id.split(':')[0];
+                const cleanUserId = sock.user.id.split(':');
                 const isMe = remoteJid.includes(cleanUserId);
 
                 if (isMe) {
