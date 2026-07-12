@@ -91,10 +91,10 @@ async function usePostgresAuthState(pgClient) {
 }
 
 async function startBot() {
-    // FIXED: Removed connectionString entirely. Using hardcoded explicit block parameters to ignore Render overrides.
+    // Explicit network configurations - completely eliminates any string parsing lookup failures
     const pgClient = new PGClient({
         user: 'postgres.uknxovlystzlbydesaem',
-        host: '://supabase.com',
+        host: 'aws-0-ap-southeast-2.pooler.supabase.com',
         database: 'postgres',
         password: 'Nuggetdagod2023',
         port: 5432,
