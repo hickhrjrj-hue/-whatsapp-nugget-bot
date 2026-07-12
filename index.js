@@ -5,7 +5,7 @@ const express = require('express');
 const https = require('https');
 const { Client: PGClient } = require('pg'); 
 
-const app = reportApp = express();
+const app = express();
 const PORT = process.env.PORT || 10000;
 const RENDER_APP_URL = 'https://whatsapp-nugget-bot.onrender.com'; 
 
@@ -49,7 +49,7 @@ async function usePostgresAuthState(pgClient) {
             const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
             if (res.rows.length === 0) return null;
             
-            // FIXED: Target row index accurately to prevent data loading exceptions
+            // Clean parsing structure map safely targets columns
             const rowData = res.rows[0].data;
             return JSON.parse(rowData, (key, value) => {
                 if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
@@ -115,16 +115,17 @@ let pgClientInstance = null;
 async function startBot() {
     console.log("Attempting isolated database handshake...");
 
-    // CRITICAL FIX: Erase the broken Render env variable from runtime memory so the pg driver doesn't read it
+    // Erase broken Render dashboard environment variables from container memory
     delete process.env.DATABASE_URL;
 
     if (!pgClientInstance) {
+        // FIXED: Using direct port 5432 and clear username properties to prevent tenant mapping drops
         pgClientInstance = new PGClient({
-            user: 'postgres.uknxovlystzlbydesaem',
-            host: 'aws-0-us-east-1.pooler.supabase.com',
+            user: 'postgres',
+            host: 'db.uknxovlystzlbydesaem.supabase.co',
             database: 'postgres',
             password: 'Nuggetdagod2023',
-            port: 6543,
+            port: 5432,
             ssl: { rejectUnauthorized: false }
         });
         
