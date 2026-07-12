@@ -1,4 +1,5 @@
 const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Curve, generateRegistrationId } = require('@whiskeysockets/baileys');
+const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 const express = require('express');
 const https = require('https');
@@ -43,15 +44,18 @@ async function usePostgresAuthState(pgClient) {
     };
 
     const readData = async (id) => {
-        const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
-        if (res.rows.length === 0) return null;
-        
-        return JSON.parse(res.rows[0].data, (key, value) => {
-            if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
-                try { return Buffer.from(value, 'base64'); } catch { return value; }
-            }
-            return value;
-        });
+        try {
+            const res = await pgClient.query('SELECT data FROM whatsapp_session WHERE id = $1', [id]);
+            if (res.rows.length === 0) return null;
+            return JSON.parse(res.rows[0].data, (key, value) => {
+                if (typeof value === 'string' && /^[a-zA-Z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0) {
+                    try { return Buffer.from(value, 'base64'); } catch { return value; }
+                }
+                return value;
+            });
+        } catch (e) {
+            return null;
+        }
     };
 
     let creds = await readData('creds');
@@ -102,11 +106,12 @@ async function usePostgresAuthState(pgClient) {
 }
 
 async function startBot() {
+    // Reads directly from the Render Environment variables panel securely
     const pgClient = new PGClient({
-        user: 'postgres.uknxovlystzlbydesaem',
-        host: '://supabase.com',
+        user: process.env.SUPABASE_USER || 'postgres.uknxovlystzlbydesaem',
+        host: 'aws-0-ap-southeast-2.pooler.supabase.com',
         database: 'postgres',
-        password: 'Nuggetdagod2023',
+        password: process.env.SUPABASE_PASSWORD || 'Nuggetdagod2023',
         port: 5432,
         ssl: { rejectUnauthorized: false }
     });
@@ -119,18 +124,15 @@ async function startBot() {
     const sock = makeWASocket({
         version: version,
         auth: state,
-        printQRInTerminal: false, // Turn off QR completely
+        printQRInTerminal: false,
         syncFullHistory: false,
         markOnlineOnConnect: true,
         logger: pino({ level: 'silent' })
     });
 
-    // --- FIX: GENERATE PAIRING CODE INSTEAD OF QR ---
-    // Change the string below to your phone number (Numbers only, e.g. '6587506845')
     const MY_PHONE_NUMBER = '6587506845'; 
 
     if (!sock.authState.creds.registered) {
-        // Wait briefly for the connection to setup, then request code
         setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(MY_PHONE_NUMBER);
@@ -142,7 +144,6 @@ async function startBot() {
             }
         }, 5000);
     }
-    // ------------------------------------------------
 
     sock.ev.on('creds.update', saveCreds);
 
